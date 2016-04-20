@@ -1,9 +1,9 @@
-PACKAGE=rabbitmq-auth-backend-keystone
+PACKAGE=rabbitmq_auth_backend_keystone
 DIST_DIR=dist
 EBIN_DIR=ebin
 INCLUDE_DIRS=
 DEPS_DIR=deps
-DEPS ?= 
+DEPS ?=
 DEPS_EZ=$(foreach DEP, $(DEPS), $(DEPS_DIR)/$(DEP).ez)
 RABBITMQ_HOME ?= .
 
@@ -30,7 +30,7 @@ install: package
 $(DEPS_DIR):
 	./rebar get-deps
 
-$(DEPS_EZ): 
+$(DEPS_EZ):
 	cd $(DEPS_DIR); $(foreach DEP, $(DEPS), zip -r $(DEP).ez $(DEP);)
 
 compile: $(DEPS_DIR)
