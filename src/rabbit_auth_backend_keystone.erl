@@ -19,10 +19,12 @@
 -module(rabbit_auth_backend_keystone).
 -include("rabbit.hrl").
 
--behaviour(rabbit_auth_backend).
+-behaviour(rabbit_authn_backend).
+-behaviour(rabbit_authz_backend).
 
 -export([description/0]).
--export([check_user_login/2, check_vhost_access/2, check_resource_access/3]).
+-export([user_login_authentication/2, user_login_authorization/1,
+         check_vhost_access/3, check_resource_access/3]).
 
 -export([add_user/2, delete_user/1, change_password/2, set_tags/2,
          list_users/0, user_info_keys/0, lookup_user/1, clear_password/1]).
@@ -97,7 +99,7 @@ description() ->
     [{name, <<"Keystone">>},
      {description, <<"OpenStack Keystone authentication">>}].
 
-check_user_login(Username, [{password, Password}]) ->
+user_login_authentication(Username, [{password, Password}]) ->
     P = binary_to_list(Password),
     [List, RabbitUsername] = case split_username(binary_to_list(Username), 2) of
         [UserName] ->
@@ -106,7 +108,7 @@ check_user_login(Username, [{password, Password}]) ->
         [DomainId, UserName] ->
             D = binary_to_list(DomainId),
             U = binary_to_list(UserName),
-            [io_lib:format("{\"auth\":{\"identity\":{\"methods\":[\"password\"],\"password\":{\"user\":{\"name\":\"~s\",\"password\":\"~s\"}}},\"scope\":{\"domain\":{\"id\":\"~s\"}}}}", 
+            [io_lib:format("{\"auth\":{\"identity\":{\"methods\":[\"password\"],\"password\":{\"user\":{\"name\":\"~s\",\"password\":\"~s\"}}},\"scope\":{\"domain\":{\"id\":\"~s\"}}}}",
                             [U, P, D]), UserName]
     end,
 
@@ -116,22 +118,27 @@ check_user_login(Username, [{password, Password}]) ->
     case httpc:request(post, {Path, [], "application/json", Data}, [], []) of
         {ok, {{_Version, 401, _ReasonPhrase}, _Headers, _Body}} -> {refused, "Denied by Keystone plugin", []};
         {ok, {{_Version, 201, _ReasonPhrase}, _Headers, _Body}} ->
-            case lookup_user(RabbitUsername) of 
+            case lookup_user(RabbitUsername) of
                 {ok, User} ->
-                     {ok, #user{username     = RabbitUsername,
-                                tags         = User#internal_user.tags,
-                                auth_backend = ?MODULE,
-                                impl         = none}};
+                     {ok, #auth_user{username     = RabbitUsername,
+                                     tags         = User#internal_user.tags,
+                                     impl         = none}};
                 {error, not_found} ->
                     {refused, "User not defined internally", []}
             end;
-        Other -> 
+        Other ->
             {error, {bad_response, Other}}
     end;
 
-check_user_login(Username, AuthProps) ->
+user_login_authentication(Username, AuthProps) ->
     exit({unknown_auth_props, Username, AuthProps}).
 
+
+user_login_authorization(Username) ->
+    case user_login_authentication(Username, []) of
+        {ok, #auth_user{impl = Impl}} -> {ok, Impl};
+        Else                          -> Else
+    end.
 
 check_vhost_access(#user{username = Username}, VHostPath) ->
     case mnesia:dirty_read({rabbit_user_permission,
@@ -141,7 +148,7 @@ check_vhost_access(#user{username = Username}, VHostPath) ->
         [_R] -> true
     end.
 
-check_resource_access(#user{username = Username},
+check_resource_access(#auth_user{username = Username},
                       #resource{virtual_host = VHostPath, name = Name},
                       Permission) ->
     case mnesia:dirty_read({rabbit_user_permission,
