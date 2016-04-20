@@ -140,7 +140,7 @@ user_login_authorization(Username) ->
         Else                          -> Else
     end.
 
-check_vhost_access(#user{username = Username}, VHostPath) ->
+check_vhost_access(#auth_user{username = Username}, VHostPath) ->
     case mnesia:dirty_read({rabbit_user_permission,
                             #user_vhost{username     = Username,
                                         virtual_host = VHostPath}}) of
